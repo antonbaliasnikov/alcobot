@@ -52,6 +52,8 @@ int ANALOG_VOLTAGE_PIN = A0; // Pin to measure analog voltage
 /* Pump inputs */
 int PUMP_PIN = 3;
 
+int SOLENOID_PIN = 5;
+
 int range = 0;
 int counter = 0;
 bool not_turned = true;
@@ -72,6 +74,7 @@ void setup() {
 
   pinMode(FAST_PWM_SERVO_PIN, OUTPUT);
   pinMode(PUMP_PIN, OUTPUT);
+  pinMode(SOLENOID_PIN, OUTPUT);
 
   /*  Set-up Timer1 control registers
       Enabling Fast PWM mode (mode 14) for Timer 1
@@ -111,10 +114,14 @@ void run_pump(int duty) {
     duty = 0;
   }
   analogWrite(PUMP_PIN, duty);
+  delay(200);
+  analogWrite(SOLENOID_PIN, 255);
 }
 
 void stop_pump() {
+  analogWrite(SOLENOID_PIN, 0);
   analogWrite(PUMP_PIN, 0);
+  delay(300);
 }
 
 int angle_to_pulse_duration(int angle) {
@@ -203,7 +210,7 @@ int get_ground_range(void) {
   return vl.readRange();
 }
 
-void horizontal_search_alg(){
+void horizontal_search_alg() {
   //time = micros();
   //Serial.println(micros() - time);
   int steps = 180;
@@ -215,7 +222,7 @@ void horizontal_search_alg(){
     if ((range < edge_threshold) && !start_found) {
       start_cup_angle = CURRENT_ANGLE;
       start_found = true;
-    }      
+    }
     Serial.println(range);
 
     if ((range > edge_threshold) && start_found) {
@@ -225,17 +232,17 @@ void horizontal_search_alg(){
       //Serial.print("At range: ");
       //Serial.println(range);
       if ((CURRENT_ANGLE - start_cup_angle) > 5) {
-        pos_array[pos_array_ind++] = cup_angle; 
+        pos_array[pos_array_ind++] = cup_angle;
       }
       start_found = false;
     }
   }
-  for (int i = 0; i<pos_array_ind; ++i) {
+  for (int i = 0; i < pos_array_ind; ++i) {
     turn_servo(pos_array[i]);
     delay(1500);
   }
   turn_servo(0);
-  while(true);
+  while (true);
 }
 
 /* Main loop function which repeats by Arduino */
@@ -253,17 +260,17 @@ void loop() {
     //Serial.print("range : ");
     Serial.println(range);
     //continue;
-    
+
     if ((range < (ground - edge_threshold)) && !start_found) {
       start_cup_angle = CURRENT_ANGLE;
       start_found = true;
       start_cup_range = range;
       Serial.print("start_found found!: ");
       continue;
-    }      
+    }
 
     Serial.print("start_cup_range - edge_threshold : ");
-    Serial.println((start_cup_range - edge_threshold));
+    //Serial.println((start_cup_range - edge_threshold));
 
     if (start_found && !bottom_found) {
       if (range < (start_cup_range + edge_threshold)) {
@@ -271,18 +278,18 @@ void loop() {
         continue;
       } else {
         Serial.println("bottom_found = true!");
-        bottom_found = true; 
+        bottom_found = true;
       }
     }
 
     if ((range < (start_cup_range + edge_threshold) && (range > (start_cup_range - edge_threshold))) && start_found && bottom_found && !end_found) {
       cup_angle = (CURRENT_ANGLE + start_cup_angle) / 2 + 5;
       Serial.print("Cup angle found: ");
-      Serial.println(cup_angle);
+      //Serial.println(cup_angle);
       //Serial.print("At range: ");
       //Serial.println(range);
       //if ((CURRENT_ANGLE - cup_angle) > 5) {
-      pos_array[pos_array_ind++] = cup_angle; 
+      pos_array[pos_array_ind++] = cup_angle;
       //}
       end_found = true;
     }
@@ -298,21 +305,19 @@ void loop() {
         bottom_found = false;
       }
     }
-    
+
   }
-  for ( int k =0; k < 2; ++k ) {
-  for (int i = 0; i<pos_array_ind; ++i) {
-    turn_servo(pos_array[i]);
-    delay(200);
-    run_pump(255);
-    delay(1000);
-    stop_pump();
-    //delay(100);
+  for ( int k = 0; k < 2; ++k ) {
+    for (int i = 0; i < pos_array_ind; ++i) {
+      turn_servo(pos_array[i]);
+      run_pump(255);
+      delay(1000);
+      stop_pump();
+    }
   }
-  }
-  delay(1000);
+  delay(250);
   turn_servo(0);
-  while(true);
+  while (true);
 }
 
 
