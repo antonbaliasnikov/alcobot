@@ -62,6 +62,11 @@ int measurements = 0;
 
 unsigned long time;
 
+/* 
+ *  Waterflow sensor
+*/
+volatile double waterFlow;
+
 /* Setup function. Executes once when program starts. */
 void setup() {
 
@@ -105,6 +110,14 @@ void setup() {
     while (1);
   }
   Serial.println("Sensor found!");
+
+  attachInterrupt(0, pulse, RISING); //DIGITAL Pin 2: Interrupt 0
+}
+
+void pulse() //measure the quantity of square wave
+{
+  // 5000 is the measured constant
+  waterFlow += 1.0 / 5000.0 * 1000;
 }
 
 void run_pump(int duty) {
@@ -307,19 +320,24 @@ void loop() {
     }
 
   }
-  for ( int k = 0; k < 2; ++k ) {
+  for ( int k = 0; k < 3; ++k ) {
     for (int i = 0; i < pos_array_ind; ++i) {
       turn_servo(pos_array[i]);
       run_pump(255);
-      delay(1000);
+      while(waterFlow < 25) delayMicroseconds(200);
       stop_pump();
+      Serial.println(waterFlow);
+      waterFlow = 0;
     }
   }
-  delay(250);
+  int final_angle = CURRENT_ANGLE;
+  for (int pos = final_angle; pos > 0; pos -= final_angle/40){
+    turn_servo(pos);
+    delay(1);
+  }
   turn_servo(0);
   while (true);
 }
-
 
 
 
