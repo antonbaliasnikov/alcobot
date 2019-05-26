@@ -320,14 +320,22 @@ void loop() {
     }
 
   }
-  for ( int k = 0; k < 3; ++k ) {
+  long flow_time = 0;
+  for ( int k = 0; k < 1; ++k ) {
     for (int i = 0; i < pos_array_ind; ++i) {
       turn_servo(pos_array[i]);
       run_pump(255);
-      while(waterFlow < 25) delayMicroseconds(200);
+      while(waterFlow < 40) {
+        delay(1);
+        flow_time += 1;
+      }
       stop_pump();
+      Serial.print("Flow time, iterations: ");
+      Serial.println(flow_time);
+      Serial.print("Flow, ml: ");
       Serial.println(waterFlow);
       waterFlow = 0;
+      flow_time = 0;
     }
   }
   int final_angle = CURRENT_ANGLE;
