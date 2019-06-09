@@ -23,6 +23,8 @@
 
 #include <Wire.h>
 #include "Adafruit_VL6180X.h"
+#include <Adafruit_GFX.h>
+#include <Max72xxPanel.h>
 
 Adafruit_VL6180X vl = Adafruit_VL6180X();
 
@@ -66,6 +68,14 @@ unsigned long time;
  *  Waterflow sensor
 */
 volatile double waterFlow;
+
+/**
+ * Display setup
+ */
+int pinCS = 10;
+int numberOfHorizontalDisplays = 1;
+int numberOfVerticalDisplays = 4;
+Max72xxPanel matrix = Max72xxPanel(pinCS, numberOfHorizontalDisplays, numberOfVerticalDisplays);
 
 /* Setup function. Executes once when program starts. */
 void setup() {
@@ -112,15 +122,42 @@ void setup() {
   Serial.println("Sensor found!");
 
   attachInterrupt(0, pulse, RISING); //DIGITAL Pin 2: Interrupt 0
+
+  matrix.setIntensity(0); // яркость
+  matrix.setRotation(3);
 }
+
+void displayNumber(int number) {
+  matrix.fillScreen(LOW);
+  char displayStr[] = "     ";
+  String numberString = String(number);
+  if (numberString.length() > 5) {
+    displayStr[0] = 'O';
+    displayStr[1] = 'f';
+    displayStr[2] = 'l';
+    displayStr[3] = 'o';
+    displayStr[4] = 'w';
+  }
+  int bias = sizeof(displayStr) - 1;
+  for(int i = numberString.length() - 1; i >=0 ; --i) {
+    displayStr[--bias] = numberString[i];
+  }
+  for(int i = 0; i < sizeof(displayStr) - 1; ++i) {
+    matrix.drawChar(i*6, 0, displayStr[i], HIGH, LOW, 1);
+  }
+  matrix.write();
+}
+
+bool pump_is_run = false;
 
 void pulse() //measure the quantity of square wave
 {
   // 5000 is the measured constant
-  waterFlow += 1.0 / 5000.0 * 1000;
+  if (pump_is_run) waterFlow += 0.2;
 }
 
 void run_pump(int duty) {
+  pump_is_run = true;
   if (duty > 255) {
     duty = 255;
   } else if (duty < 0) {
@@ -132,9 +169,10 @@ void run_pump(int duty) {
 }
 
 void stop_pump() {
+  pump_is_run = false;
   analogWrite(SOLENOID_PIN, 0);
   analogWrite(PUMP_PIN, 0);
-  delay(300);
+  delay(1500);
 }
 
 int angle_to_pulse_duration(int angle) {
@@ -211,11 +249,14 @@ bool start_found = false;
 bool bottom_found = false;
 bool end_found = false;
 int cup_angle = 0;
-int edge_threshold = 20;
+int edge_threshold_vertical = 20;
+int edge_threshold = 150;
 int start_cup_range;
 
 int pos_array[10];
 int pos_array_ind = 0;
+
+int ml = 80;
 
 int get_ground_range(void) {
   turn_servo(0);
@@ -226,7 +267,7 @@ int get_ground_range(void) {
 void horizontal_search_alg() {
   //time = micros();
   //Serial.println(micros() - time);
-  int steps = 180;
+  int steps = 30;
   int angle_step = int((MAX_ANGLE - MIN_ANGLE) / steps);
   for (int angle = MIN_ANGLE; angle <= MAX_ANGLE; angle += angle_step) {
     turn_servo(angle);
@@ -239,7 +280,7 @@ void horizontal_search_alg() {
     Serial.println(range);
 
     if ((range > edge_threshold) && start_found) {
-      cup_angle = (CURRENT_ANGLE + start_cup_angle) / 2 - 5;
+      cup_angle = (CURRENT_ANGLE + start_cup_angle) / 2;
       Serial.print("Target angle found: ");
       Serial.println(cup_angle);
       //Serial.print("At range: ");
@@ -250,17 +291,40 @@ void horizontal_search_alg() {
       start_found = false;
     }
   }
-  for (int i = 0; i < pos_array_ind; ++i) {
-    turn_servo(pos_array[i]);
-    delay(1500);
+  long flow_time = 0;
+  for ( int k = 0; k < 1; ++k ) {
+    for (int i = 0; i < pos_array_ind; ++i) {
+      turn_servo(pos_array[i]);
+      // Delay here until we add a feedback for servo
+      delay(200);
+      run_pump(255);
+      // -2 is inertial constant
+      while(waterFlow < ml - 2) {
+        //delay(1);
+        displayNumber(waterFlow);
+        //flow_time += 1;
+      }
+      displayNumber(waterFlow);
+      stop_pump();
+      displayNumber(waterFlow + 2);
+      //Serial.print("Flow time, iterations: ");
+      //Serial.println(flow_time);
+      //Serial.print("Flow, ml: ");
+      //Serial.println(waterFlow);
+      waterFlow = 0;
+      flow_time = 0;
+    }
+  }
+  int final_angle = CURRENT_ANGLE;
+  for (int pos = final_angle; pos > 0; pos -= final_angle/40){
+    turn_servo(pos);
+    delay(1);
   }
   turn_servo(0);
   while (true);
 }
 
-/* Main loop function which repeats by Arduino */
-void loop() {
-
+void vertical_search_alg() {
   int ground = get_ground_range();
 
   int steps = 60;
@@ -274,7 +338,7 @@ void loop() {
     Serial.println(range);
     //continue;
 
-    if ((range < (ground - edge_threshold)) && !start_found) {
+    if ((range < (ground - edge_threshold_vertical)) && !start_found) {
       start_cup_angle = CURRENT_ANGLE;
       start_found = true;
       start_cup_range = range;
@@ -282,11 +346,11 @@ void loop() {
       continue;
     }
 
-    Serial.print("start_cup_range - edge_threshold : ");
-    //Serial.println((start_cup_range - edge_threshold));
+    Serial.print("start_cup_range - edge_threshold_vertical : ");
+    //Serial.println((start_cup_range - edge_threshold_vertical));
 
     if (start_found && !bottom_found) {
-      if (range < (start_cup_range + edge_threshold)) {
+      if (range < (start_cup_range + edge_threshold_vertical)) {
         Serial.println("continue!");
         continue;
       } else {
@@ -295,7 +359,7 @@ void loop() {
       }
     }
 
-    if ((range < (start_cup_range + edge_threshold) && (range > (start_cup_range - edge_threshold))) && start_found && bottom_found && !end_found) {
+    if ((range < (start_cup_range + edge_threshold_vertical) && (range > (start_cup_range - edge_threshold_vertical))) && start_found && bottom_found && !end_found) {
       cup_angle = (CURRENT_ANGLE + start_cup_angle) / 2 + 5;
       Serial.print("Cup angle found: ");
       //Serial.println(cup_angle);
@@ -308,7 +372,7 @@ void loop() {
     }
 
     if (end_found) {
-      if (range < (start_cup_range + edge_threshold)) {
+      if (range < (start_cup_range + edge_threshold_vertical)) {
         Serial.println("continue on the end edge!");
         continue;
       } else {
@@ -325,7 +389,7 @@ void loop() {
     for (int i = 0; i < pos_array_ind; ++i) {
       turn_servo(pos_array[i]);
       run_pump(255);
-      while(waterFlow < 40) {
+      while(waterFlow < ml - 2) {
         delay(1);
         flow_time += 1;
       }
@@ -345,6 +409,12 @@ void loop() {
   }
   turn_servo(0);
   while (true);
+}
+
+/* Main loop function which repeats by Arduino */
+void loop() {
+  //analogWrite(SOLENOID_PIN, 255);
+  horizontal_search_alg();
 }
 
 
